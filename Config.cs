@@ -32,6 +32,7 @@ namespace KLogS7
                                 $";{nameof(Scheduler.StartTaskIntervallMinutes)}={Scheduler.StartTaskIntervallMinutes}\r\n" +
 
                                 "\r\n[SPS]\r\n" +
+                                ";A00=CpuType,IP,Rack,Slot\r\n" + 
                                 $"A01={nameof(CpuType.S71500)},10.67.9.16,0,0\r\n" +
 
                                 "\r\n[Pfade]\r\n" +

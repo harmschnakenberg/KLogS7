@@ -7,6 +7,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Drawing;
+using OfficeOpenXml.Style;
+using System.Xml.Linq;
 
 namespace KLogS7
 {
@@ -73,6 +75,7 @@ namespace KLogS7
 
             try
             {
+
                 #region Schließe Excel-Mappen, wenn sie geöffnet sind.
                 Process[] processes = Process.GetProcessesByName("EXCEL");
 
@@ -112,7 +115,7 @@ namespace KLogS7
                     //    {
                     //        SetNewSystemTime.SetNewSystemtimeAndScheduler(Program.CmdArgs[1] + " " + Program.CmdArgs[2]);
                     //    }
-                        //break;
+                    //break;
                     case "Monatsdatei":
                         if (Program.CmdArgs.Length > 2)
                         {
@@ -210,7 +213,7 @@ namespace KLogS7
             }
             catch (IOException)
             {
-                Log.Write(Log.Cat.ExcelWrite, Log.Prio.Error, 040107, string.Format("Die Datei {0} ist bereits geöffnet. Es wird nicht versucht erneut zu schreiben.", xlDayFilePath));                
+                Log.Write(Log.Cat.ExcelWrite, Log.Prio.Error, 040107, string.Format("Die Datei {0} ist bereits geöffnet. Es wird nicht versucht erneut zu schreiben.", xlDayFilePath));
             }
             catch (Exception ex)
             {
@@ -469,37 +472,38 @@ namespace KLogS7
                         ExcelWorksheet worksheet = excelPackage.Workbook.Worksheets[worksheetNo];
 
                         //Neu 30.06.2023 Minutenzähler hochzählen - in jedem Blatt wg. Viertelstundenblätter
-                            if (!int.TryParse(worksheet.Cells[1, 1].Value?.ToString(), out int minCounter))
-                                minCounter = -1;
+                        if (!int.TryParse(worksheet.Cells[1, 1].Value?.ToString(), out int minCounter))
+                        {
+                            worksheet.Cells[1, 1].Style.Font.Color.SetColor(Color.White); //Schrift nicht sichtbar
+                            minCounter = -1;
+                        }
 
-                            worksheet.Cells[1, 1].Value =  ++minCounter;
+                        worksheet.Cells[1, 1].Value =  ++minCounter;
                         
                         //Liste Uhrzeiten-Spalten von Worksheet
-                        int[] timeCols = XlTimeColCount(worksheet);
+                        int[] timeColsCount = XlTimeColCount(worksheet);
 
-                        if (timeCols.Length == 0) // Wenn keine Zeiten-Spalten auf dem Blatt vorhanden sind vermutlich ein Schockkühler-Blatt
+                        if (timeColsCount.Length == 0) // Wenn keine Zeiten-Spalten auf dem Blatt vorhanden sind vermutlich ein Schockkühler-Blatt
                         {
                             Log.Write(Log.Cat.ExcelRead, Log.Prio.Info, 040502, string.Format("Blatt {0} '{1}' aus {2} hat keine Zeitspalte.", worksheetNo, excelPackage.Workbook.Worksheets[worksheetNo].Name, Path.GetFileNameWithoutExtension(xlFilePath)));
                         }
                         else
                         {
                             #region Zeile in Tabellenblatt Kühlraum oder TK-Raum schreiben
-                            int row = XlSetRowAndCol(timeCols, out int col);
+                            int row = XlSetRowAndCol(timeColsCount, out int col);
                             if (col < 1 || row < 1)
                             {
                                 // Es muss in dieses Blatt nichts geschrieben werden.
-                                Log.Write(Log.Cat.ExcelRead, Log.Prio.Info, 040503, string.Format("Schreibe keine Einträge in Blatt {0} '{1}' ({2} Zeitspalten)", worksheetNo, excelPackage.Workbook.Worksheets[worksheetNo].Name, timeCols.Length));
+                                Log.Write(Log.Cat.ExcelRead, Log.Prio.Info, 040503, string.Format("Schreibe keine Einträge in Blatt {0} '{1}' ({2} Zeitspalten)", worksheetNo, excelPackage.Workbook.Worksheets[worksheetNo].Name, timeColsCount.Length));
                                 continue;
                             }
 
-                            foreach (int timeCol in timeCols) //Bei minütlicher Ausführung schreibe aktuelle Uhrzeit in die Zeitspalten
-                            {
-                                worksheet.Cells[row, timeCol].Value = DateTime.Now.ToString("HH:mm");
-                            }
-
+                            //minütliche Ausführung -> schreibe aktuelle Uhrzeit in die aktuelle Zeitspalte                            
+                            worksheet.Cells[row, col].Value = DateTime.Now.ToString("HH:mm");
+           
                             #region Bedingungen für Mittelwertbildung und Rücksetzen Minutenzähler
-                            bool cond1 = DateTime.Now.Minute == 0 && timeCols.Length == 1;
-                            bool cond2 = timeCols.Length > 1 && (DateTime.Now.Minute == 0 || DateTime.Now.Minute == 15 || DateTime.Now.Minute == 30 || DateTime.Now.Minute == 45);
+                            bool cond1 = timeColsCount.Length == 1 && DateTime.Now.Minute == 0;
+                            bool cond2 = timeColsCount.Length > 1 && (DateTime.Now.Minute == 0 || DateTime.Now.Minute == 15 || DateTime.Now.Minute == 30 || DateTime.Now.Minute == 45);
                             #endregion 
 
                             //TagCollection tagCollection = new TagCollection(worksheet.Name, "A01", wsContent); //TagCollection kann nur aus einer CPU lesen
@@ -517,9 +521,11 @@ namespace KLogS7
                                     {
                                         #region Tag Aus SPS lesen
                                         CpuTag cpuTag;
-                                                           
-                                        if (TagName.StartsWith("Mittel_"))  //TEST Mittelwerte bilden mit TagName Schema Mittel_A01_DB10_DBW6                      
-                                            cpuTag = new CpuTag(TagName.Substring(7));   
+
+                                        if (TagName.StartsWith("Mittel_"))  //Mittelwerte bilden mit TagName Schema Mittel_A01_DB10_DBW6                                                                   
+                                            cpuTag = new CpuTag(TagName.Substring(7));                                        
+                                        else if (TagName.StartsWith("Dif_"))  //TEST Zählerdiffernez bilden mit TagName Schema Dif_A01_DB10_DBW6                      
+                                            cpuTag = new CpuTag(TagName.Substring(4));
                                         else
                                             cpuTag = new CpuTag(TagName);
 
@@ -527,9 +533,13 @@ namespace KLogS7
                                         Console.WriteLine(cpuTag.Name +"="+ result);
                                         #endregion
 
-                                        // Wenn Variable nicht vorhanden ist, wird von Intouch float.MaxValue ausgegeben. //TODO: Testen bei direkter S7-Kommunikation
-                                        if (Convert.ToSingle(result) != float.MaxValue)
+                                        // Wenn Variable nicht vorhanden ist, wird von Intouch float.MaxValue ausgegeben. //bei direkter S7-Kommunikation 'null'
+                                        if (result is null)
                                         {
+                                            worksheet.Cells[row, col].Formula = "NA()";
+                                            worksheet.Cells[row, col].Calculate();
+                                        }
+                                        else { 
                                             #region Minutenzähler
                                             if (cpuTag.VarType == S7.Net.VarType.Bit) //Minutenwerte zählen
                                             {
@@ -538,37 +548,67 @@ namespace KLogS7
                                                 else
                                                 {
                                                     int newVal = oldVal + (int)Convert.ToSingle(result);
-                                                    worksheet.Cells[row, col].Value = newVal;
 
                                                     if (newVal > 60)
                                                     {
-                                                        Log.Write(Log.Cat.InTouchVar, Log.Prio.Warning, 040504, string.Format(
-                                                            "Der Wert {0} = {1} scheint eine Betriebszeit darzustellen, ist aber größer als 60.", TagName, newVal));
+                                                        Log.Write(Log.Cat.InTouchVar, Log.Prio.Warning, 040504, 
+                                                            $"Der Wert {TagName} = {newVal} scheint eine Betriebszeit darzustellen, ist aber größer als 60. Er wird mit 60 notiert.");
+                                                        newVal = 60;
                                                     }
+
+                                                    worksheet.Cells[row, col].Value = newVal;
                                                 }
                                             }
                                             #endregion
                                             #region Mittelwertbildung
                                             else if (TagName.StartsWith("Mittel_"))
                                             {
+                                                //Wenn kein Wert in der Zelle steht: aktuellen Wert reinschrieben
                                                 if (!float.TryParse(worksheet.Cells[row, col].Value?.ToString(), out float oldVal))
+                                                {
+                                                    worksheet.Cells[row, col].Style.Font.Color.SetColor(Color.Gray); //Zwischenwerte in grauer Schrift
                                                     worksheet.Cells[row, col].Value = Convert.ToSingle(result);
+                                                }
                                                 else
                                                 {
                                                     #region Aufsummieren
-                                                    
+
                                                     float newVal = oldVal + Convert.ToSingle(result);
-                                                    
+
                                                     #endregion
                                                     #region Mittelwertbildung
 
-                                                
-                                                    if (cond1 || cond2)
-                                                        newVal /= minCounter;
 
+                                                    if (cond1 || cond2)
+                                                    {
+                                                        newVal /= minCounter;
+                                                        worksheet.Cells[row, col].Style.Font.Color.SetColor(Color.Black); //Nach Berechnung wieder schwarze Schrift
+                                                    }
                                                     #endregion
 
                                                     worksheet.Cells[row, col].Value = newVal;
+                                                }
+                                            }
+                                            #endregion
+                                            #region Zählerdifferenz
+                                            else if(TagName.StartsWith("Dif_")) //Schreibt die Differenz zwischen dem ersten und dem letzten Wert in die Zelle
+                                            {
+                                                float currVal = Convert.ToInt32(result); // TEST Int
+                                                //Wenn kein Wert in der Zelle steht: aktuellen Wert reinschrieben
+                                                if (!int.TryParse(worksheet.Cells[row, col].Value?.ToString(), out int oldVal))
+                                                {
+                                                    worksheet.Cells[row, col].Style.Font.Color.SetColor(Color.Gray); //Zwischenwerte in grauer Schrift
+                                                    worksheet.Cells[row, col].Value = currVal;
+                                                }
+
+                                                if (cond1 || cond2) //Minute 0[, 15, 30 oder 45]
+                                                {
+                                                    if (currVal > oldVal) // && currVal - oldVal < 10000) // siehe C.S. XlLogBestStdWerte
+                                                        worksheet.Cells[row, col].Value = currVal - oldVal;
+                                                    else 
+                                                        worksheet.Cells[row, col].Value = 0;
+                                                    
+                                                    worksheet.Cells[row, col].Style.Font.Color.SetColor(Color.Black); //Nach Berechnung wieder schwarze Schrift
                                                 }
                                             }
                                             #endregion
@@ -576,12 +616,7 @@ namespace KLogS7
                                             else
                                                 worksheet.Cells[row, col].Value = result;
                                             #endregion
-                                        }
-                                        else
-                                        {
-                                            worksheet.Cells[row, col].Formula = "NA()";
-                                            worksheet.Cells[row, col].Calculate();
-                                        }
+                                        }                                      
                                     }
                                 }
                                 ++col;
@@ -603,7 +638,7 @@ namespace KLogS7
                     excelPackage.Workbook.CalcMode = ExcelCalcMode.Automatic;
                     excelPackage.Workbook.Properties.LastModifiedBy = Path.GetFileNameWithoutExtension(System.Reflection.Assembly.GetAssembly(typeof(Program)).Location);
                     //Set Focus to First Worksheet.
-                    //excelPackage.Workbook.Worksheets[1].Cells[1, 1].Value = null;
+                    excelPackage.Workbook.Worksheets[1].Cells[2, 2].Value = null; //leere Zelle hinter Blattüberschrift
                     //save the changes
                     excelPackage.Save();
 
@@ -613,6 +648,10 @@ namespace KLogS7
             catch (InvalidOperationException)
             {
                 Log.Write(Log.Cat.ExcelWrite, Log.Prio.Error, 040506, string.Format("Die Excel-Datei {0} konnte nicht beschrieben werden. Sie ist vermutlich durch ein anderes Programm geöffnet.", Path.GetFileNameWithoutExtension(xlFilePath)));                
+            }
+            catch(S7.Net.PlcException ex_plc)
+            {
+                Log.Write(Log.Cat.ExcelWrite, Log.Prio.Error, 040508, string.Format($"Kommunikationsfehler zur SPS: {ex_plc.Message} \r\n\t\t\t\t"));
             }
             catch (Exception ex)
             {

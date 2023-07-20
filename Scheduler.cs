@@ -99,7 +99,7 @@ namespace KLogS7
             #endregion
 
             // InTouch-Werte können nur durch den Benutzer empfangen werden, der grade angemeldet ist. Daher kein /RU + /RP möglich!
-            string schtasksCommand = String.Format("/Create /SC Minute /MO {0} /TN \\KKT\\{1} /TR \"wscript \\\"{2}\"\" /ST {3}", intervallMinutes, scheduledTaskName, taskPath, startTime);
+            string schtasksCommand = String.Format("/ru SYSTEM /Create /SC Minute /MO {0} /TN \\KKT\\{1} /TR \"wscript \\\"{2}\"\" /ST {3}", intervallMinutes, scheduledTaskName, taskPath, startTime);
 
             Console.WriteLine("schtasks.exe " + schtasksCommand);
             Log.Write(Log.Cat.Scheduler, Log.Prio.LogAlways, 100402, string.Format("Neuer Task wird erstellt. Intervall: {0} min; Startzeit: {1} ", intervallMinutes, startTime));
@@ -119,7 +119,7 @@ namespace KLogS7
             {
                 // Read the error stream first and then wait.
                 string error = process.StandardError.ReadToEnd();
-                process.WaitForExit(10000);
+                process.WaitForExit(5000);
 
                 //Check for an error
                 if (!String.IsNullOrEmpty(error))

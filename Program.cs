@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -141,6 +142,26 @@ namespace KLogS7
                     Log.Write(Log.Cat.ExcelRead, Log.Prio.Warning, 010213, string.Format("Keine Vorlage für Monatsdatei gefunden."));
                     //kein Fehler
                 }
+
+                #region Verbindung zu SPSen prüfen
+                using (TcpClient tcpClient = new TcpClient())
+                {
+                    tcpClient.ReceiveTimeout = 1000;
+
+                    foreach (S7.Net.Plc cpu in KreuS7.CPUs.Values)
+                    {
+                        try
+                        {
+                            tcpClient.Connect(cpu.IP, cpu.Port);
+                            Console.WriteLine($"CPU {cpu.IP} Port {cpu.Port} ist erreichbar.");                           
+                        }
+                        catch (Exception)
+                        {
+                            Log.Write(Log.Cat.InTouchVar, Log.Prio.Error, 010218, $"CPU IP {cpu.IP} Port {cpu.Port} ist NICHT erreichbar.");
+                        }
+                    }
+                }
+                #endregion 
 
                 //string Operator = (string)InTouch.ReadTag("$Operator");
                 //Log.Write(Log.Cat.Info, Log.Prio.Info, 010215, "Angemeldet in InTouch: >" + Operator + "<");

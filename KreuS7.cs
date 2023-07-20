@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 
 namespace KLogS7
 {
@@ -329,6 +330,7 @@ namespace KLogS7
             try
             {
                 var nameItems = name.Split('_');
+               
 
                 if (nameItems == null || nameItems.Length < 3)
                 {
@@ -362,6 +364,9 @@ namespace KLogS7
                             break;
                         case "DBD":
                             this.VarType = VarType.Real;
+                            break;
+                        case "DIN":
+                            this.VarType = VarType.DInt;
                             break;
                         case "DBX":
                             this.BitAdr = byte.Parse(nameItems[3]);
@@ -409,11 +414,26 @@ namespace KLogS7
         public object Read()
         {
             //Console.WriteLine($"CPU: {CpuName} {KreuS7.CPUs.ContainsKey(CpuName)}");
-            //if (CpuName is null || KreuS7.CPUs.ContainsKey(CpuName))
-            //    return 0;
+            if (CpuName is null || !KreuS7.CPUs.ContainsKey(CpuName))
+                return null;
+
 
             if (!KreuS7.CPUs[CpuName].IsConnected)
-                KreuS7.CPUs[CpuName].Open();
+            {
+                try
+                {
+                    using (TcpClient tcpClient = new TcpClient())
+                    {
+                        tcpClient.Connect(KreuS7.CPUs[CpuName].IP, KreuS7.CPUs[CpuName].Port);
+                    }
+
+                    KreuS7.CPUs[CpuName].Open();
+                }
+                catch (Exception)
+                {
+                    Log.Write(Log.Cat.InTouchVar, Log.Prio.Error, 09991, $"CPU IP {KreuS7.CPUs[CpuName].IP} Port {KreuS7.CPUs[CpuName].Port} ist NICHT erreichbar.");                    
+                }                                
+            }
 
             //Tools.Wait(1);
 
